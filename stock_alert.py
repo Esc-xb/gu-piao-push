@@ -91,50 +91,68 @@ def get_access_token():
     return resp.json()["access_token"]
 
 def send_wecom_msg(content):
-    token = get_access_token()
-    url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={token}"
-    data = {
-        "touser": TO_USER,
-        "msgtype": "text",
-        "agentid": int(AGENT_ID),
-        "text": {"content": content}
-    }
-    requests.post(url, json=data, timeout=10)
+    try:
+        token = get_access_token()
+        url = f"https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={token}"
+        data = {
+            "touser": TO_USER,
+            "msgtype": "text",
+            "agentid": int(AGENT_ID),
+            "text": {"content": content}
+        }
+        requests.post(url, json=data, timeout=10)
+    except Exception as e:
+        print("企微推送异常：", e)
 
-# ========== 行情获取 ==========
+# ========== 行情获取（增加异常捕获） ==========
 def get_a_stock(symbol: str):
-    df = ak.stock_zh_a_spot_em()
-    row = df[df["代码"] == symbol]
-    if row.empty:
+    try:
+        df = ak.stock_zh_a_spot_em()
+        row = df[df["代码"] == symbol]
+        if row.empty:
+            return None
+        price = float(row["最新价"].iloc[0])
+        pct = float(row["涨跌幅"].iloc[0])
+        return {"price": price, "pct": pct}
+    except Exception as e:
+        print(f"A股行情接口异常 {symbol}: {e}")
         return None
-    price = float(row["最新价"].iloc[0])
-    pct = float(row["涨跌幅"].iloc[0])
-    return {"price": price, "pct": pct}
 
 def get_xauusd():
-    df = ak.fx_spot_quote()
-    row = df[df["品种"] == "现货黄金"]
-    if row.empty:
+    try:
+        df = ak.fx_spot_quote()
+        row = df[df["品种"] == "现货黄金"]
+        if row.empty:
+            return None
+        price = float(row["最新价"].iloc[0])
+        pct = float(row["涨跌幅"].iloc[0])
+        return {"price": price, "pct": pct}
+    except Exception as e:
+        print(f"黄金行情接口异常: {e}")
         return None
-    price = float(row["最新价"].iloc[0])
-    pct = float(row["涨跌幅"].iloc[0])
-    return {"price": price, "pct": pct}
 
 def get_ndx():
-    df = ak.stock_us_index()
-    row = df[df["名称"] == "纳斯达克综合指数"]
-    if row.empty:
+    try:
+        df = ak.stock_us_index()
+        row = df[df["名称"] == "纳斯达克综合指数"]
+        if row.empty:
+            return None
+        price = float(row["最新价"].iloc[0])
+        pct = float(row["涨跌幅"].iloc[0])
+        return {"price": price, "pct": pct}
+    except Exception as e:
+        print(f"纳指行情接口异常: {e}")
         return None
-    price = float(row["最新价"].iloc[0])
-    pct = float(row["涨跌幅"].iloc[0])
-    return {"price": price, "pct": pct}
 
 # ========== 早报：昨日收盘汇总 ==========
 def run_daily_report():
     lines = ["=====【昨日收盘早报】====="]
     lines.append("【持仓】")
-    hg = ak.stock_zh_a_hist(symbol="001221", period="daily", adjust="qfq").iloc[-1]
-    lines.append(f"悍高集团(001221)：{hg['收盘']:.2f}  昨涨跌：{hg['涨跌幅']:.2f}%")
+    try:
+        hg = ak.stock_zh_a_hist(symbol="001221", period="daily", adjust="qfq").iloc[-1]
+        lines.append(f"悍高集团(001221)：{hg['收盘']:.2f}  昨涨跌：{hg['涨跌幅']:.2f}%")
+    except:
+        lines.append("悍高集团：行情获取失败")
 
     lines.append("【观察池】")
     watch_codes = [
@@ -147,16 +165,23 @@ def run_daily_report():
         ("600519", "贵州茅台",1420.00)
     ]
     for code,name,buy in watch_codes:
-        row = ak.stock_zh_a_hist(symbol=code, period="daily", adjust="qfq").iloc[-1]
-        lines.append(f"{name}({code})：{row['收盘']:.2f}  目标买入价：{buy:.2f}")
+        try:
+            row = ak.stock_zh_a_hist(symbol=code, period="daily", adjust="qfq").iloc[-1]
+            lines.append(f"{name}({code})：{row['收盘']:.2f}  目标买入价：{buy:.2f}")
+        except:
+            lines.append(f"{name}({code})：行情获取失败")
 
     lines.append("【长期追踪】")
     g = get_xauusd()
     n = get_ndx()
     if g:
         lines.append(f"现货黄金：{g['price']:.2f}  涨跌：{g['pct']:.2f}%")
+    else:
+        lines.append("现货黄金：行情获取失败")
     if n:
         lines.append(f"纳斯达克指数：{n['price']:.2f}  涨跌：{n['pct']:.2f}%")
+    else:
+        lines.append("纳斯达克指数：行情获取失败")
     lines.append("=========================")
     lines.append("今日重点留意：悍高异动；观察池等待买点")
     msg = "\n".join(lines)
@@ -188,7 +213,7 @@ def run_alert():
         else:
             res = None
         if not res:
-            print(f"{name} 行情获取失败")
+            print(f"{name} 行情获取失败，跳过")
             continue
         price = res["price"]
         pct = res["pct"]
@@ -229,7 +254,7 @@ def run_alert():
         send_wecom_msg(full_msg)
         print("告警已推送：\n", full_msg)
     else:
-        print("本轮无告警")
+        print("本轮无告警或者行情接口被限流")
 
 if __name__ == "__main__":
     import sys

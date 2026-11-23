@@ -6,6 +6,15 @@ on:
     # 北京时间09:00-15:00 每5分钟告警 → UTC 1点~7点
     - cron: '*/5 1-7 * * 1-5'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 运行模式
+        required: true
+        default: 'alert'
+        type: choice
+        options:
+          - alert
+          - report
 
 jobs:
   run:
@@ -25,13 +34,5 @@ jobs:
       - name: 安装依赖
         run: |
           pip install akshare requests
-      - name: 判断任务类型
-        id: judge
-        run: |
-          if [[ ${{ github.event.schedule }} == '0 0 * * 1-5' ]]; then
-            echo "MODE=report" >> $GITHUB_ENV
-          else
-            echo "MODE=alert" >> $GITHUB_ENV
-          fi
-      - name: 运行脚本
-        run: python stock_alert.py ${{ env.MODE }}
+      - name: 执行脚本
+        run: python stock_alert.py ${{ github.event.inputs.mode || 'alert' }}
